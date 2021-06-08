@@ -8,7 +8,8 @@ from torch.utils.data import Dataset
 
 
 class SpeakerDataset(Dataset):
-    def __init__(self, data_dir, seg_len):
+    def __init__(self, keys, data_dir, seg_len):
+        self.keys = keys
         self.data_dir = data_dir
         self.meta_data = json.load(open(os.path.join(data_dir, "metadata.json")))
         self.seg_len = seg_len
@@ -31,4 +32,10 @@ class SpeakerDataset(Dataset):
         else:
             start = random.randint(0, max(len(mel) - self.seg_len, 0))
             mel = mel[start : (start + self.seg_len)]
-        return mel, embed
+
+        data = {}
+        if 'mels' in self.keys:
+            data['mels'] = mel
+        if 'embed' in self.keys:
+            data['embed'] = embed
+        return data

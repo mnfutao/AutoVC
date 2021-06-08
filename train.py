@@ -5,18 +5,25 @@ import numpy as np
 import torch
 import torch.nn as nn
 import yaml
-from torch.utils.data.dataloader import DataLoader
+from data.dataloader import VCDataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm.auto import trange
 
 from data import SpeakerDataset
-from modules import AutoVC
+from modules.models import AutoVC
+from tqdm import tqdm
+import pickle
+
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '6'
 
 
 def main(
     config_path: Path,
     data_dir: Path,
     save_dir: Path,
+    warm_up_path: Path,
+    opt_warm_up_path: Path,
     n_steps: int,
     save_steps: int,
     log_steps: int,
@@ -29,73 +36,107 @@ def main(
     config = yaml.load(config_path.open(mode="r"), Loader=yaml.FullLoader)
     writer = SummaryWriter(save_dir)
 
-    model = AutoVC(config)
+    
+    if warm_up_path.exists():
+        print('【warm up model from saved model !!!】 ')
+        model = torch.jit.load(warm_up_path).to(device)
+    else:
+        model = AutoVC(config)
+
     model = torch.jit.script(model).to(device)
-    train_set = SpeakerDataset(data_dir, seg_len=seg_len)
-    data_loader = DataLoader(
-        train_set,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=0,
-        drop_last=True,
-        worker_init_fn=lambda x: np.random.seed((torch.initial_seed()) % (2 ** 32)),
-    )
+    train_set = SpeakerDataset(['mels', 'embed'], data_dir, seg_len=seg_len)
+
+    data_loader = VCDataLoader(train_set, batch_size=2, mode='train')
 
     optimizer = torch.optim.Adam(
         filter(lambda p: p.requires_grad, model.parameters()), lr=1e-4
     )
+
+    if opt_warm_up_path.exists():
+        print('【warm up optimizer from saved optimizer !!!】 ')
+        optimizer.load_state_dict(torch.load(opt_warm_up_path))
+
     MSELoss = nn.MSELoss()
     L1Loss = nn.L1Loss()
     lambda_cnt = 1.0
 
-    pbar = trange(n_steps)
-    for step in pbar:
-        try:
-            mels, embs = next(data_iter)
-        except:
-            data_iter = iter(data_loader)
-            mels, embs = next(data_iter)
-        mels = mels.to(device)
-        embs = embs.to(device)
-        rec_org, rec_pst, codes = model(mels, embs)
+   
+    
+    global_step = 0
+    global_epoch = 0
+    step_epoch_path = save_dir / f'step_epoch.pkl'
+    if step_epoch_path.exists():
+        print('【warm up global step && epoch from saved file !!!】 ')
+        
+        with open(step_epoch_path, 'rb') as fr:
+            global_value = pickle.load(fr)
+            global_step = global_value['global_step']
+            global_epoch = global_value['global_epoch']
 
-        fb_codes = torch.cat(model.content_encoder(rec_pst, embs), dim=-1)
+    print()
+    print(f'【current_global_step:{global_step}】')
+    print(f'【current_global_epoch:{global_epoch}】')
+    print()
 
-        # reconstruction loss
-        org_loss = MSELoss(rec_org, mels)
-        pst_loss = MSELoss(rec_pst, mels)
-        # content consistency
-        cnt_loss = L1Loss(fb_codes, codes)
+    for step in range(global_step, n_steps):
+        pbar = tqdm(data_loader, unit="mels", unit_scale=data_loader.batch_size, disable=False)
+        for batch in pbar:  
 
-        loss = org_loss + pst_loss + lambda_cnt * cnt_loss
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+            mels, embs = batch['mels'], batch['embed']
+        
+            mels = mels.to(device)
+            embs = embs.to(device)
+            rec_org, rec_pst, codes = model(mels, embs)
 
-        if (step + 1) % save_steps == 0:
-            model.save(save_dir / f"model-{step + 1}.pt")
-            torch.save(optimizer.state_dict(), save_dir / f"optimizer-{step + 1}.pt")
+            fb_codes = torch.cat(model.content_encoder(rec_pst, embs), dim=-1)
 
-        if (step + 1) % log_steps == 0:
-            writer.add_scalar("loss/org_rec", org_loss.item(), step + 1)
-            writer.add_scalar("loss/pst_rec", pst_loss.item(), step + 1)
-            writer.add_scalar("loss/content", cnt_loss.item(), step + 1)
-        pbar.set_postfix(
-            {
-                "org_rec": org_loss.item(),
-                "pst_rec": pst_loss.item(),
-                "cnt": cnt_loss.item(),
-            }
-        )
+            # reconstruction loss
+            org_loss = MSELoss(rec_org, mels)
+            pst_loss = MSELoss(rec_pst, mels)
+            # content consistency
+            cnt_loss = L1Loss(fb_codes, codes)
+
+            loss = org_loss + pst_loss + lambda_cnt * cnt_loss
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            if (global_step + 1) % save_steps == 0:
+                print('model_save!')
+                model.save(save_dir / f"model-{step + 1}.pt")
+                model.save(save_dir / f"model.pt")
+                torch.save(optimizer.state_dict(), save_dir / f"optimizer.pt")
+                global_value = {}
+                global_value['global_step'] = global_step + 1
+                global_value['global_epoch'] = global_epoch
+                with open(step_epoch_path, 'wb') as fw:
+                    pickle.dump(global_value, fw)
+                
+
+            if (global_step + 1) % log_steps == 0:
+                writer.add_scalar("loss/org_rec", org_loss.item(), global_step + 1)
+                writer.add_scalar("loss/pst_rec", pst_loss.item(), global_step + 1)
+                writer.add_scalar("loss/content", cnt_loss.item(), global_step + 1)
+            pbar.set_postfix(
+                {
+                    "org_rec": org_loss.item(),
+                    "pst_rec": pst_loss.item(),
+                    "cnt": cnt_loss.item(),
+                }
+            )
+            global_step += 1
+        global_epoch += 1
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("config_path", type=Path)
-    parser.add_argument("data_dir", type=Path)
-    parser.add_argument("save_dir", type=Path)
+    parser.add_argument("--config_path", default = 'config.yaml', type=Path)
+    parser.add_argument("--data_dir", default='./datasets', type=Path)
+    parser.add_argument("--save_dir", default='./logdir', type=Path)
+    parser.add_argument("--warm_up_path", default='./logdir/model.pt', type=Path)
+    parser.add_argument("--opt_warm_up_path", default='./logdir/optimizer.pt', type=Path)
     parser.add_argument("--n_steps", type=int, default=int(1e7))
-    parser.add_argument("--save_steps", type=int, default=10000)
+    parser.add_argument("--save_steps", type=int, default=1)
     parser.add_argument("--log_steps", type=int, default=250)
     parser.add_argument("--batch_size", type=int, default=2)
     parser.add_argument("--seg_len", type=int, default=128)

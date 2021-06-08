@@ -47,6 +47,7 @@ def main(
     meta_data = defaultdict(list)
     (save_dir / "uttrs").mkdir(exist_ok=True)
     (save_dir / "embed").mkdir(exist_ok=True)
+
     spk_dirs = data_dir.iterdir()
     wav2mel = Wav2Mel()
     file2mel = partial(process_file, wav2mel=wav2mel)
@@ -59,13 +60,19 @@ def main(
         embed = embed_uttrs(encoder, mels, seg_len)
         rnd_paths = [f"uttrs/{uuid4().hex}.pt" for _ in range(len(mels))]
         dummy = [
-            torch.save(mel.cpu(), save_dir / path) for path, mel in zip(rnd_paths, mels)
+            torch.save(mel.cpu(), str(save_dir / path)) for path, mel in zip(rnd_paths, mels)
         ]
-        emb_path = f"embed/{spk}.pt"
+        emb_path = f"embed/{spk.name}.pt"
         torch.save(embed.cpu(), save_dir / emb_path)
-        meta_data[spk] = {"embed": emb_path, "uttrs": rnd_paths}
-    json.dump(meta_data, (save_dir / "metadata.json").open(mode="w"))
+        meta_data[spk.name] = {"embed": emb_path, "uttrs": rnd_paths}
 
+    with open(str(save_dir) + "/metadata.json", 'w') as fw:
+        json.dump(meta_data, fw)
+    # json.dump(meta_data, (str(save_dir) / "metadata.json").open(mode="w"))
+
+
+# embed: Tensor(256)
+# uttrs: Tensor(N*80)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
