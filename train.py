@@ -15,7 +15,7 @@ from tqdm import tqdm
 import pickle
 
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '6'
+os.environ['CUDA_VISIBLE_DEVICES'] = '7'
 
 
 def main(
@@ -24,18 +24,22 @@ def main(
     save_dir: Path,
     warm_up_path: Path,
     opt_warm_up_path: Path,
+    embeding_path: Path,
     n_steps: int,
     save_steps: int,
     log_steps: int,
     batch_size: int,
     seg_len: int,
 ):
+    torch.backends.cudnn.enabled = True
     torch.backends.cudnn.benchmark = True
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
     save_dir.mkdir(exist_ok=True)
     config = yaml.load(config_path.open(mode="r"), Loader=yaml.FullLoader)
     writer = SummaryWriter(save_dir)
-
+    
+    assert embeding_path.exists()
     
     if warm_up_path.exists():
         print('【warm up model from saved model !!!】 ')
@@ -44,9 +48,10 @@ def main(
         model = AutoVC(config)
 
     model = torch.jit.script(model).to(device)
-    train_set = SpeakerDataset(['mels', 'embed'], data_dir, seg_len=seg_len)
+    #train_set = SpeakerDataset(['mels', 'embed'], data_dir, seg_len=seg_len)
+    train_set = SpeakerDataset(['mels', 'embed'], data_dir, embeding_path, seg_len=seg_len)
 
-    data_loader = VCDataLoader(train_set, batch_size=2, mode='train')
+    data_loader = VCDataLoader(train_set, batch_size=batch_size, mode='train')
 
     optimizer = torch.optim.Adam(
         filter(lambda p: p.requires_grad, model.parameters()), lr=1e-4
@@ -83,7 +88,7 @@ def main(
         for batch in pbar:  
 
             mels, embs = batch['mels'], batch['embed']
-        
+
             mels = mels.to(device)
             embs = embs.to(device)
             rec_org, rec_pst, codes = model(mels, embs)
@@ -103,9 +108,9 @@ def main(
 
             if (global_step + 1) % save_steps == 0:
                 print('model_save!')
-                model.save(save_dir / f"model-{step + 1}.pt")
-                model.save(save_dir / f"model.pt")
-                torch.save(optimizer.state_dict(), save_dir / f"optimizer.pt")
+                model.save(str(save_dir / f"model-{global_step + 1}.pt"))
+                model.save(str(save_dir / f"model.pt"))
+                torch.save(optimizer.state_dict(), str(save_dir / f"optimizer.pt"))
                 global_value = {}
                 global_value['global_step'] = global_step + 1
                 global_value['global_epoch'] = global_epoch
@@ -131,13 +136,14 @@ def main(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_path", default = 'config.yaml', type=Path)
-    parser.add_argument("--data_dir", default='./datasets', type=Path)
+    parser.add_argument("--data_dir", default='./data/other_speech/', type=Path)
     parser.add_argument("--save_dir", default='./logdir', type=Path)
     parser.add_argument("--warm_up_path", default='./logdir/model.pt', type=Path)
     parser.add_argument("--opt_warm_up_path", default='./logdir/optimizer.pt', type=Path)
-    parser.add_argument("--n_steps", type=int, default=int(1e7))
-    parser.add_argument("--save_steps", type=int, default=1)
+    parser.add_argument("--embeding_path", default='./data/new_char_emb.npy', type=Path)
+    parser.add_argument("--n_steps", type=int, default=int(2e7))
+    parser.add_argument("--save_steps", type=int, default=5000)
     parser.add_argument("--log_steps", type=int, default=250)
-    parser.add_argument("--batch_size", type=int, default=2)
+    parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--seg_len", type=int, default=128)
     main(**vars(parser.parse_args()))
