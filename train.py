@@ -15,7 +15,7 @@ from tqdm import tqdm
 import pickle
 
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '7'
+os.environ['CUDA_VISIBLE_DEVICES'] = '6'
 
 
 def main(
@@ -122,6 +122,9 @@ def main(
                 writer.add_scalar("loss/org_rec", org_loss.item(), global_step + 1)
                 writer.add_scalar("loss/pst_rec", pst_loss.item(), global_step + 1)
                 writer.add_scalar("loss/content", cnt_loss.item(), global_step + 1)
+                writer.add_image("image/ori_mel", mels[:1,:,:].permute(0,2,1), global_step + 1)
+                writer.add_image("image/pre_mel", rec_org[:1,:,:].permute(0,2,1), global_step + 1)
+                writer.add_image("image/pre_pos_mel", rec_pst[:1,:,:].permute(0,2,1), global_step + 1)
             pbar.set_postfix(
                 {
                     "org_rec": org_loss.item(),
@@ -143,7 +146,7 @@ if __name__ == "__main__":
     parser.add_argument("--embeding_path", default='./data/new_char_emb.npy', type=Path)
     parser.add_argument("--n_steps", type=int, default=int(2e7))
     parser.add_argument("--save_steps", type=int, default=5000)
-    parser.add_argument("--log_steps", type=int, default=250)
-    parser.add_argument("--batch_size", type=int, default=64)
-    parser.add_argument("--seg_len", type=int, default=128)
+    parser.add_argument("--log_steps", type=int, default=10)
+    parser.add_argument("--batch_size", type=int, default=180)
+    parser.add_argument("--seg_len", type=int, default=256)
     main(**vars(parser.parse_args()))
