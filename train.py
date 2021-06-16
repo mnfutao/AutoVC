@@ -15,7 +15,7 @@ from tqdm import tqdm
 import pickle
 
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '6'
+os.environ['CUDA_VISIBLE_DEVICES'] = '7'
 
 
 def main(
@@ -49,7 +49,7 @@ def main(
 
     model = torch.jit.script(model).to(device)
     #train_set = SpeakerDataset(['mels', 'embed'], data_dir, seg_len=seg_len)
-    train_set = SpeakerDataset(['mels', 'embed'], data_dir, embeding_path, seg_len=seg_len)
+    train_set = SpeakerDataset(['mels', 'embed','ids'], data_dir, embeding_path, seg_len=seg_len)
 
     data_loader = VCDataLoader(train_set, batch_size=batch_size, mode='train')
 
@@ -87,7 +87,7 @@ def main(
         pbar = tqdm(data_loader, unit="mels", unit_scale=data_loader.batch_size, disable=False)
         for batch in pbar:  
 
-            mels, embs = batch['mels'], batch['embed']
+            mels, embs, ids = batch['mels'], batch['embed'], batch['ids']
 
             mels = mels.to(device)
             embs = embs.to(device)
@@ -146,7 +146,7 @@ if __name__ == "__main__":
     parser.add_argument("--embeding_path", default='./data/new_char_emb.npy', type=Path)
     parser.add_argument("--n_steps", type=int, default=int(2e7))
     parser.add_argument("--save_steps", type=int, default=5000)
-    parser.add_argument("--log_steps", type=int, default=10)
-    parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--log_steps", type=int, default=250)
+    parser.add_argument("--batch_size", type=int, default=180)
     parser.add_argument("--seg_len", type=int, default=256)
     main(**vars(parser.parse_args()))

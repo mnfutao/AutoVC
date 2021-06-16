@@ -45,14 +45,14 @@ class SpeakerDataset(Dataset):
         self.index2data = {}
         index = 0
         for i in range(len(self.ids)):
-            c_speaker_id, _ = self.fnames[i].split('-')
+            c_speaker_id = self.fnames[i].split('-')[0]
             if c_speaker_id not in self.speaker2index:
                 self.speaker2index[c_speaker_id] = index
                 self.index2data[index] = [c_speaker_id]
                 index += 1
             self.index2data[self.speaker2index[c_speaker_id]].append(self.fnames[i])
 
-
+        print(f'total_speaker:{len(self.index2data)}')
     def __len__(self):
         return len(self.index2data)
 
@@ -81,4 +81,6 @@ class SpeakerDataset(Dataset):
             data['mels'] = current_mel
         if 'embed' in self.keys:
             data['embed'] = current_speaker_embedding
+        if 'ids' in self.keys:
+            data['ids'] = np.array([current_speaker_id])
         return data
