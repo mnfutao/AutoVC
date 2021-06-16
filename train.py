@@ -147,6 +147,6 @@ if __name__ == "__main__":
     parser.add_argument("--n_steps", type=int, default=int(2e7))
     parser.add_argument("--save_steps", type=int, default=5000)
     parser.add_argument("--log_steps", type=int, default=10)
-    parser.add_argument("--batch_size", type=int, default=180)
+    parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--seg_len", type=int, default=256)
     main(**vars(parser.parse_args()))

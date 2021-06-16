@@ -40,16 +40,32 @@ class SpeakerDataset(Dataset):
         self.speaker_embedding = torch.from_numpy(np.load(speaker_embedding_path).astype(np.float32))
 
 
+        self.speaker2index = {}
+        self.index2data = {}
+        index = 0
+        for i in range(len(self.ids)):
+            c_speaker_id, _ = self.fnames[i].split('-')
+            if c_speaker_id not in self.speaker2index:
+                self.speaker2index[c_speaker_id] = index
+                self.index2data[index] = [c_speaker_id]
+                index += 1
+            self.index2data[self.speaker2index[c_speaker_id]].append(self.fnames[i])
+
+
     def __len__(self):
-        return len(self.fnames)
+        return len(self.index2data)
 
     def __getitem__(self, index):
         # sample utterances
         
-        current_speaker_id = self.ids[index]
+        current_speaker = self.index2data[index]
+
+        current_speaker_id = self.speaker2index[current_speaker[0]]
         current_speaker_embedding = self.speaker_embedding[current_speaker_id]
 
-        current_mel = np.load(os.path.join(self.data_dir, 'mels_4', "%s.npy" % self.fnames[index]))
+        random_choice_index = np.random.randint(1, len(current_speaker))
+
+        current_mel = np.load(os.path.join(self.data_dir, 'mels_4', "%s.npy" % current_speaker[random_choice_index]))
         current_mel = torch.from_numpy(current_mel.astype(np.float32))
 
         if len(current_mel) < self.seg_len:
